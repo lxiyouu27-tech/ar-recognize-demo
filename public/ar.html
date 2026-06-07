@@ -560,6 +560,9 @@
             });
 
             const data = await resp.json();
+            if (data.error) {
+                throw new Error(data.error);
+            }
             if (data.results && data.results.length > 0) {
                 data.results.forEach(r => {
                     if (r.confirmed) confirmedPois.add(r.name);
@@ -573,10 +576,11 @@
         } catch (e) {
             statusDot.className = 'status-dot error';
             statusText.textContent = 'AI错误';
+            showAiNotification([{name: '错误: ' + (e.message || e), confirmed: false, description: ''}]);
             setTimeout(() => {
                 statusDot.className = 'status-dot';
                 statusText.textContent = 'AI就绪';
-            }, 3000);
+            }, 5000);
         } finally {
             aiRecognizing = false;
         }

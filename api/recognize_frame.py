@@ -1,5 +1,6 @@
 import os
 import json
+import traceback
 from http.server import BaseHTTPRequestHandler
 from openai import OpenAI
 
@@ -65,7 +66,7 @@ confirmed=true表示你确认画面中看到了该地点。"""
         except json.JSONDecodeError:
             self._respond(200, {"results": [], "raw": result_text[:200]})
         except Exception as e:
-            self._respond(500, {"error": str(e)[:100]})
+            self._respond(500, {"error": f"{type(e).__name__}: {str(e)}", "trace": traceback.format_exc()[-300:]})
 
     def _respond(self, status, data):
         self.send_response(status)

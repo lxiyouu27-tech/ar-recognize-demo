@@ -1,6 +1,14 @@
 {
   "buildCommand": "",
   "outputDirectory": "public",
+  "functions": {
+    "api/recognize_frame.py": {
+      "maxDuration": 30
+    },
+    "api/pois.py": {
+      "maxDuration": 15
+    }
+  },
   "rewrites": [
     { "source": "/api/pois", "destination": "/api/pois" },
     { "source": "/api/recognize-frame", "destination": "/api/recognize_frame" }

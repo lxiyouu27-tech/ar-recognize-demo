@@ -549,6 +549,7 @@
             const resp = await fetch('/api/recognize-frame', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                signal: AbortSignal.timeout(25000),
                 body: JSON.stringify({
                     image: imageData,
                     lat: userLat,
@@ -586,11 +587,11 @@
         const canvas = document.getElementById('captureCanvas');
         if (!video.videoWidth) return null;
 
-        canvas.width = 640;
-        canvas.height = 480;
+        canvas.width = 480;
+        canvas.height = 360;
         const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, 0, 0, 640, 480);
-        return canvas.toDataURL('image/jpeg', 0.6);
+        ctx.drawImage(video, 0, 0, 480, 360);
+        return canvas.toDataURL('image/jpeg', 0.4);
     }
 
     function showAiNotification(results) {

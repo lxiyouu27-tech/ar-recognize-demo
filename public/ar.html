@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>AR识万物</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            width: 100%; height: 100%;
+            overflow: hidden;
+            background: #000;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            touch-action: none;
+        }
+
+        /* 摄像头视频层 */
+        #cameraVideo {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            object-fit: cover;
+            z-index: 1;
+        }
+
+        /* POI投射层 */
+        #arLayer {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 10;
+            pointer-events: none;
+            perspective: 1000px;
+        }
+
+        /* POI卡片 */
+        .poi-card {
+            position: absolute;
+            pointer-events: auto;
+            transform-origin: center bottom;
+            transition: opacity 0.3s, transform 0.05s linear;
+            will-change: transform, left, top;
+        }
+        .poi-card-inner {
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            padding: 10px 14px;
+            min-width: 100px;
+            text-align: center;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+        }
+        .poi-card-inner::after {
+            content: '';
+            position: absolute;
+            bottom: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0; height: 0;
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-top: 8px solid rgba(0, 0, 0, 0.75);
+        }
+        .poi-card .poi-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #fff;
+            white-space: nowrap;
+            max-width: 140px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .poi-card .poi-meta {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            margin-top: 4px;
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.7);
+        }
+        .poi-card .poi-distance {
+            color: #4facfe;
+            font-weight: 500;
+        }
+        .poi-card .poi-type-badge {
+            background: rgba(79, 172, 254, 0.2);
+            color: #4facfe;
+            padding: 1px 6px;
+            border-radius: 6px;
+            font-size: 10px;
+        }
+        .poi-card.confirmed .poi-card-inner {
+            border-color: rgba(76, 175, 80, 0.5);
+            box-shadow: 0 0 12px rgba(76, 175, 80, 0.3);
+        }
+        .poi-card .poi-dot {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: #4facfe;
+            margin: 6px auto 0;
+            animation: dotPulse 2s infinite;
+        }
+        .poi-card.confirmed .poi-dot { background: #4caf50; }
+        @keyframes dotPulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.5); }
+        }
+
+        /* HUD顶栏 */
+        #hud {
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            z-index: 100;
+            padding: env(safe-area-inset-top, 20px) 16px 10px;
+            background: linear-gradient(180deg, rgba(0,0,0,0.7) 0%, transparent 100%);
+        }
+        .hud-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            color: #fff;
+            font-size: 13px;
+        }
+        .hud-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .hud-heading {
+            font-size: 16px;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+        .compass-icon {
+            width: 20px; height: 20px;
+            transition: transform 0.1s linear;
+        }
+        .status-dot {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: #4caf50;
+        }
+        .status-dot.loading { background: #ff9800; animation: dotPulse 1s infinite; }
+        .status-dot.error { background: #f44336; }
+
+        /* 底栏 */
+        #bottomBar {
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            z-index: 100;
+            padding: 16px 20px env(safe-area-inset-bottom, 20px);
+            background: linear-gradient(0deg, rgba(0,0,0,0.7) 0%, transparent 100%);
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+        }
+        .action-btn {
+            padding: 10px 20px;
+            border-radius: 24px;
+            border: 1px solid rgba(255,255,255,0.3);
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(8px);
+            color: #fff;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .action-btn:active {
+            transform: scale(0.95);
+            background: rgba(79, 172, 254, 0.3);
+        }
+        .action-btn.primary {
+            background: rgba(79, 172, 254, 0.3);
+            border-color: #4facfe;
+        }
+
+        /* 初始化覆盖层 */
+        #initOverlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            z-index: 1000;
+            background: #0a0a0a;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            padding: 40px;
+            text-align: center;
+        }
+        #initOverlay h2 {
+            font-size: 22px;
+            margin-bottom: 12px;
+            background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        #initOverlay p { color: #888; margin-bottom: 24px; line-height: 1.6; }
+        #startBtn {
+            padding: 14px 40px;
+            border-radius: 28px;
+            border: none;
+            background: linear-gradient(135deg, #4facfe, #00f2fe);
+            color: #000;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        #startBtn:active { transform: scale(0.95); }
+        .init-status {
+            margin-top: 20px;
+            font-size: 13px;
+            color: #666;
+            min-height: 40px;
+        }
+
+        /* AI识别结果通知 */
+        #aiNotification {
+            position: fixed;
+            top: 80px; left: 16px; right: 16px;
+            z-index: 200;
+            background: rgba(0,0,0,0.85);
+            backdrop-filter: blur(12px);
+            border-radius: 12px;
+            padding: 12px 16px;
+            border: 1px solid rgba(79,172,254,0.3);
+            color: #fff;
+            font-size: 13px;
+            transform: translateY(-20px);
+            opacity: 0;
+            transition: all 0.3s;
+            pointer-events: none;
+        }
+        #aiNotification.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <!-- 初始化覆盖层 -->
+    <div id="initOverlay">
+        <h2>AR 识万物</h2>
+        <p>打开摄像头，对准周围环境<br>POI信息将实时投射在画面上</p>
+        <button id="startBtn" onclick="initAR()">开启AR模式</button>
+        <div class="init-status" id="initStatus"></div>
+    </div>
+
+    <!-- 摄像头 -->
+    <video id="cameraVideo" autoplay playsinline muted></video>
+
+    <!-- AR投射层 -->
+    <div id="arLayer"></div>
+
+    <!-- HUD -->
+    <div id="hud" style="display:none">
+        <div class="hud-row">
+            <div class="hud-item">
+                <svg class="compass-icon" id="compassIcon" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.3)" stroke-width="1.5"/>
+                    <path d="M12 2 L14 10 L12 8 L10 10 Z" fill="#f44336"/>
+                    <path d="M12 22 L14 14 L12 16 L10 14 Z" fill="#fff"/>
+                </svg>
+                <span class="hud-heading" id="headingDisplay">--°</span>
+            </div>
+            <div class="hud-item">
+                <span id="poiCount">0 POI</span>
+            </div>
+            <div class="hud-item">
+                <span class="status-dot" id="aiStatus"></span>
+                <span id="aiStatusText">AI就绪</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI通知 -->
+    <div id="aiNotification"></div>
+
+    <!-- 底栏 -->
+    <div id="bottomBar" style="display:none">
+        <button class="action-btn" onclick="refreshPois()">刷新POI</button>
+        <button class="action-btn primary" onclick="triggerAiRecognize()">AI识别</button>
+    </div>
+
+    <!-- 隐藏canvas用于截帧 -->
+    <canvas id="captureCanvas" style="display:none"></canvas>
+
+    <script>
+    // ========== 状态变量 ==========
+    let userLat = 0, userLng = 0;
+    let heading = 0;
+    let pitch = 0;
+    let pois = [];
+    let confirmedPois = new Set();
+    let videoStream = null;
+    let animFrameId = null;
+    let aiRecognizing = false;
+    let lastAiTime = 0;
+    const AI_INTERVAL = 8000;
+    const CAMERA_FOV = 60;
+
+    // ========== 初始化 ==========
+    async function initAR() {
+        const status = document.getElementById('initStatus');
+
+        // 1. 请求摄像头
+        status.textContent = '正在请求摄像头权限...';
+        try {
+            videoStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+                audio: false
+            });
+            document.getElementById('cameraVideo').srcObject = videoStream;
+        } catch (e) {
+            status.textContent = '摄像头权限被拒绝: ' + e.message;
+            return;
+        }
+
+        // 2. 请求定位
+        status.textContent = '正在获取GPS定位...';
+        try {
+            const pos = await new Promise((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(resolve, reject, {
+                    enableHighAccuracy: true, timeout: 10000
+                });
+            });
+            userLat = pos.coords.latitude;
+            userLng = pos.coords.longitude;
+        } catch (e) {
+            status.textContent = '定位失败: ' + e.message + '（将使用模拟数据）';
+            // 模拟位置：北京天安门附近
+            userLat = 39.9042;
+            userLng = 116.4074;
+            await new Promise(r => setTimeout(r, 1500));
+        }
+
+        // 3. 请求陀螺仪/罗盘
+        status.textContent = '正在初始化传感器...';
+        if (typeof DeviceOrientationEvent !== 'undefined' &&
+            typeof DeviceOrientationEvent.requestPermission === 'function') {
+            try {
+                const perm = await DeviceOrientationEvent.requestPermission();
+                if (perm !== 'granted') {
+                    status.textContent = '陀螺仪权限被拒绝';
+                    return;
+                }
+            } catch (e) {
+                // 非iOS或不需要权限
+            }
+        }
+        window.addEventListener('deviceorientation', onDeviceOrientation, true);
+
+        // 持续GPS更新
+        navigator.geolocation.watchPosition(
+            (pos) => {
+                userLat = pos.coords.latitude;
+                userLng = pos.coords.longitude;
+            },
+            () => {},
+            { enableHighAccuracy: true }
+        );
+
+        // 4. 获取POI
+        status.textContent = '正在获取周边POI...';
+        await refreshPois();
+
+        // 5. 启动AR
+        document.getElementById('initOverlay').style.display = 'none';
+        document.getElementById('hud').style.display = 'block';
+        document.getElementById('bottomBar').style.display = 'flex';
+        startRenderLoop();
+
+        // 6. 定时AI识别
+        setInterval(() => {
+            if (!aiRecognizing && Date.now() - lastAiTime > AI_INTERVAL) {
+                triggerAiRecognize();
+            }
+        }, AI_INTERVAL);
+    }
+
+    // ========== 传感器 ==========
+    function onDeviceOrientation(event) {
+        if (event.webkitCompassHeading !== undefined) {
+            heading = event.webkitCompassHeading;
+        } else if (event.alpha !== null) {
+            heading = (360 - event.alpha) % 360;
+        }
+        if (event.beta !== null) {
+            pitch = event.beta;
+        }
+    }
+
+    // ========== POI获取 ==========
+    async function refreshPois() {
+        try {
+            const resp = await fetch('/api/pois', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ lat: userLat, lng: userLng, radius: 300 })
+            });
+            const data = await resp.json();
+            if (data.pois) {
+                pois = data.pois.map(p => ({
+                    ...p,
+                    bearing: calculateBearing(userLat, userLng, p.lat, p.lng),
+                    distance: calculateDistance(userLat, userLng, p.lat, p.lng)
+                }));
+                document.getElementById('poiCount').textContent = pois.length + ' POI';
+                renderPoiCards();
+            }
+        } catch (e) {
+            console.error('获取POI失败:', e);
+        }
+    }
+
+    // ========== 地理计算 ==========
+    function calculateBearing(lat1, lng1, lat2, lng2) {
+        const toRad = d => d * Math.PI / 180;
+        const toDeg = r => r * 180 / Math.PI;
+        const dLng = toRad(lng2 - lng1);
+        const y = Math.sin(dLng) * Math.cos(toRad(lat2));
+        const x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
+                  Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLng);
+        return (toDeg(Math.atan2(y, x)) + 360) % 360;
+    }
+
+    function calculateDistance(lat1, lng1, lat2, lng2) {
+        const R = 6371000;
+        const toRad = d => d * Math.PI / 180;
+        const dLat = toRad(lat2 - lat1);
+        const dLng = toRad(lng2 - lng1);
+        const a = Math.sin(dLat / 2) ** 2 +
+                  Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    // ========== 渲染 ==========
+    function renderPoiCards() {
+        const layer = document.getElementById('arLayer');
+        layer.innerHTML = '';
+        pois.forEach((poi, i) => {
+            const card = document.createElement('div');
+            card.className = 'poi-card' + (confirmedPois.has(poi.name) ? ' confirmed' : '');
+            card.id = 'poi-' + i;
+            card.innerHTML = `
+                <div class="poi-card-inner">
+                    <div class="poi-name">${escapeHtml(poi.name)}</div>
+                    <div class="poi-meta">
+                        <span class="poi-type-badge">${escapeHtml(poi.type || '地点')}</span>
+                        <span class="poi-distance">${Math.round(poi.distance)}m</span>
+                    </div>
+                    <div class="poi-dot"></div>
+                </div>
+            `;
+            layer.appendChild(card);
+        });
+    }
+
+    function startRenderLoop() {
+        function frame() {
+            updateCardPositions();
+            updateHud();
+            animFrameId = requestAnimationFrame(frame);
+        }
+        animFrameId = requestAnimationFrame(frame);
+    }
+
+    function updateCardPositions() {
+        const screenW = window.innerWidth;
+        const screenH = window.innerHeight;
+        const halfFov = CAMERA_FOV / 2;
+
+        pois.forEach((poi, i) => {
+            const card = document.getElementById('poi-' + i);
+            if (!card) return;
+
+            // 计算方位角差
+            let angleDiff = poi.bearing - heading;
+            if (angleDiff > 180) angleDiff -= 360;
+            if (angleDiff < -180) angleDiff += 360;
+
+            // 是否在视野内（扩大一点范围让卡片有淡出效果）
+            const visibleRange = halfFov + 10;
+            if (Math.abs(angleDiff) > visibleRange) {
+                card.style.opacity = '0';
+                card.style.pointerEvents = 'none';
+                return;
+            }
+
+            // 水平位置
+            const x = screenW / 2 + (angleDiff / halfFov) * (screenW / 2);
+
+            // 垂直位置：基于距离和俯仰角
+            const distanceFactor = Math.min(poi.distance / 300, 1);
+            const baseY = screenH * 0.3 + distanceFactor * screenH * 0.3;
+            const pitchOffset = (pitch - 60) * 2;
+            const y = baseY + pitchOffset;
+
+            // 缩放：近大远小
+            const scale = Math.max(0.6, 1 - distanceFactor * 0.4);
+
+            // 透明度：边缘淡出
+            const edgeFade = 1 - Math.max(0, (Math.abs(angleDiff) - halfFov) / 10);
+            const opacity = Math.min(1, edgeFade);
+
+            card.style.left = x + 'px';
+            card.style.top = y + 'px';
+            card.style.transform = `translate(-50%, -100%) scale(${scale})`;
+            card.style.opacity = opacity;
+            card.style.pointerEvents = opacity > 0.5 ? 'auto' : 'none';
+        });
+    }
+
+    function updateHud() {
+        document.getElementById('headingDisplay').textContent = Math.round(heading) + '°';
+        const compass = document.getElementById('compassIcon');
+        compass.style.transform = `rotate(${-heading}deg)`;
+    }
+
+    // ========== AI识别 ==========
+    async function triggerAiRecognize() {
+        if (aiRecognizing) return;
+        aiRecognizing = true;
+        lastAiTime = Date.now();
+
+        const statusDot = document.getElementById('aiStatus');
+        const statusText = document.getElementById('aiStatusText');
+        statusDot.className = 'status-dot loading';
+        statusText.textContent = 'AI识别中';
+
+        try {
+            const imageData = captureFrame();
+            if (!imageData) {
+                throw new Error('截帧失败');
+            }
+
+            const visiblePois = pois
+                .filter(p => {
+                    let diff = p.bearing - heading;
+                    if (diff > 180) diff -= 360;
+                    if (diff < -180) diff += 360;
+                    return Math.abs(diff) < CAMERA_FOV / 2;
+                })
+                .map(p => p.name);
+
+            const resp = await fetch('/api/recognize-frame', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    image: imageData,
+                    lat: userLat,
+                    lng: userLng,
+                    heading: Math.round(heading),
+                    visible_pois: visiblePois
+                })
+            });
+
+            const data = await resp.json();
+            if (data.results && data.results.length > 0) {
+                data.results.forEach(r => {
+                    if (r.confirmed) confirmedPois.add(r.name);
+                });
+                renderPoiCards();
+                showAiNotification(data.results);
+            }
+
+            statusDot.className = 'status-dot';
+            statusText.textContent = 'AI就绪';
+        } catch (e) {
+            statusDot.className = 'status-dot error';
+            statusText.textContent = 'AI错误';
+            setTimeout(() => {
+                statusDot.className = 'status-dot';
+                statusText.textContent = 'AI就绪';
+            }, 3000);
+        } finally {
+            aiRecognizing = false;
+        }
+    }
+
+    function captureFrame() {
+        const video = document.getElementById('cameraVideo');
+        const canvas = document.getElementById('captureCanvas');
+        if (!video.videoWidth) return null;
+
+        canvas.width = 640;
+        canvas.height = 480;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, 640, 480);
+        return canvas.toDataURL('image/jpeg', 0.6);
+    }
+
+    function showAiNotification(results) {
+        const el = document.getElementById('aiNotification');
+        const confirmed = results.filter(r => r.confirmed);
+        if (confirmed.length > 0) {
+            el.innerHTML = '<strong>AI确认：</strong>' +
+                confirmed.map(r => `${r.name}（${r.description || ''}）`).join('、');
+        } else {
+            el.innerHTML = '<strong>AI分析：</strong>' +
+                results.map(r => r.name).join('、');
+        }
+        el.classList.add('show');
+        setTimeout(() => el.classList.remove('show'), 4000);
+    }
+
+    // ========== 工具函数 ==========
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text || '';
+        return div.innerHTML;
+    }
+    </script>
+</body>
+</html>

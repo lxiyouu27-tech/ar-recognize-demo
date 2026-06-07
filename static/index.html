@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>拍照识万物</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #0a0a0a;
+            color: #fff;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        .header {
+            padding: 16px 20px;
+            text-align: center;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border-bottom: 1px solid #2a2a4a;
+        }
+        .header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .header p {
+            font-size: 12px;
+            color: #888;
+            margin-top: 4px;
+        }
+        .location-bar {
+            padding: 10px 20px;
+            background: #111;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: #aaa;
+        }
+        .location-bar .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #f44;
+            animation: pulse 2s infinite;
+        }
+        .location-bar .dot.active { background: #4f4; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .camera-section {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+        }
+        .preview-container {
+            width: 100%;
+            max-width: 400px;
+            aspect-ratio: 4/3;
+            background: #1a1a1a;
+            border-radius: 16px;
+            overflow: hidden;
+            position: relative;
+            border: 2px solid #333;
+        }
+        .preview-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .preview-placeholder {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #555;
+        }
+        .preview-placeholder svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 12px;
+            opacity: 0.5;
+        }
+        .capture-btn {
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            border: 4px solid #4facfe;
+            background: transparent;
+            position: relative;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .capture-btn::after {
+            content: '';
+            position: absolute;
+            top: 6px; left: 6px; right: 6px; bottom: 6px;
+            border-radius: 50%;
+            background: #4facfe;
+            transition: all 0.2s;
+        }
+        .capture-btn:active { transform: scale(0.9); }
+        .capture-btn:active::after { background: #00f2fe; }
+        .capture-btn.loading { border-color: #888; pointer-events: none; }
+        .capture-btn.loading::after {
+            background: #888;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        input[type="file"] { display: none; }
+        .status-text {
+            font-size: 14px;
+            color: #888;
+            text-align: center;
+            min-height: 20px;
+        }
+        .results-section {
+            padding: 0 20px 20px;
+        }
+        .results-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            padding-left: 4px;
+        }
+        .result-card {
+            background: linear-gradient(135deg, #1a1a2e 0%, #1e2a3a 100%);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            border: 1px solid #2a3a4a;
+            animation: slideUp 0.3s ease;
+        }
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .result-card .name {
+            font-size: 17px;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+        .result-card .meta {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+        .result-card .tag {
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            background: rgba(79, 172, 254, 0.15);
+            color: #4facfe;
+            border: 1px solid rgba(79, 172, 254, 0.3);
+        }
+        .result-card .tag.confidence-high {
+            background: rgba(76, 175, 80, 0.15);
+            color: #66bb6a;
+            border-color: rgba(76, 175, 80, 0.3);
+        }
+        .result-card .tag.confidence-mid {
+            background: rgba(255, 193, 7, 0.15);
+            color: #ffca28;
+            border-color: rgba(255, 193, 7, 0.3);
+        }
+        .result-card .tag.confidence-low {
+            background: rgba(244, 67, 54, 0.15);
+            color: #ef5350;
+            border-color: rgba(244, 67, 54, 0.3);
+        }
+        .result-card .desc {
+            font-size: 14px;
+            color: #bbb;
+            line-height: 1.5;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #555;
+        }
+        .poi-info {
+            font-size: 12px;
+            color: #666;
+            padding: 8px 20px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>拍照识万物</h1>
+        <p>对准周围建筑/店铺，AI帮你识别</p>
+        <a href="/ar" style="display:inline-block;margin-top:10px;padding:8px 20px;border-radius:20px;background:linear-gradient(135deg,#4facfe,#00f2fe);color:#000;font-size:13px;font-weight:600;text-decoration:none;">进入AR实时模式</a>
+    </div>
+
+    <div class="location-bar">
+        <div class="dot" id="locationDot"></div>
+        <span id="locationText">正在获取位置...</span>
+    </div>
+
+    <div class="camera-section">
+        <div class="preview-container">
+            <div class="preview-placeholder" id="placeholder">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                    <circle cx="12" cy="13" r="4"/>
+                </svg>
+                <span>点击下方按钮拍照</span>
+            </div>
+            <img id="preview" style="display:none" alt="拍摄预览">
+        </div>
+
+        <input type="file" id="cameraInput" accept="image/*" capture="environment">
+        <button class="capture-btn" id="captureBtn" onclick="document.getElementById('cameraInput').click()"></button>
+        <div class="status-text" id="statusText">点击拍照按钮开始识别</div>
+    </div>
+
+    <div class="results-section" id="resultsSection" style="display:none">
+        <div class="results-title">识别结果</div>
+        <div id="resultsList"></div>
+    </div>
+
+    <div class="poi-info" id="poiInfo"></div>
+
+    <script>
+        let currentLat = 0;
+        let currentLng = 0;
+        let locationReady = false;
+
+        // 获取GPS定位
+        function initLocation() {
+            if (!navigator.geolocation) {
+                document.getElementById('locationText').textContent = '浏览器不支持定位';
+                return;
+            }
+            navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                    currentLat = pos.coords.latitude;
+                    currentLng = pos.coords.longitude;
+                    locationReady = true;
+                    document.getElementById('locationDot').classList.add('active');
+                    document.getElementById('locationText').textContent =
+                        `已定位: ${currentLat.toFixed(5)}, ${currentLng.toFixed(5)}`;
+                },
+                (err) => {
+                    document.getElementById('locationText').textContent =
+                        `定位失败: ${err.message}（仍可拍照识别）`;
+                },
+                { enableHighAccuracy: true, timeout: 10000 }
+            );
+        }
+
+        // 处理拍照
+        document.getElementById('cameraInput').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            // 显示预览
+            const reader = new FileReader();
+            reader.onload = async (ev) => {
+                const base64 = ev.target.result;
+                document.getElementById('preview').src = base64;
+                document.getElementById('preview').style.display = 'block';
+                document.getElementById('placeholder').style.display = 'none';
+
+                // 发起识别请求
+                await recognizeImage(base64);
+            };
+            reader.readAsDataURL(file);
+        });
+
+        async function recognizeImage(imageBase64) {
+            const btn = document.getElementById('captureBtn');
+            const status = document.getElementById('statusText');
+            const resultsSection = document.getElementById('resultsSection');
+
+            btn.classList.add('loading');
+            status.textContent = '正在识别中...';
+            resultsSection.style.display = 'none';
+
+            try {
+                const resp = await fetch('/api/recognize', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        image: imageBase64,
+                        lat: currentLat,
+                        lng: currentLng
+                    })
+                });
+
+                const data = await resp.json();
+
+                if (data.error) {
+                    status.textContent = `识别失败: ${data.error}`;
+                    return;
+                }
+
+                displayResults(data.results);
+                document.getElementById('poiInfo').textContent =
+                    `已检索到 ${data.pois_found} 个周边地点作为参考`;
+                status.textContent = '识别完成，可继续拍照';
+            } catch (err) {
+                status.textContent = `请求失败: ${err.message}`;
+            } finally {
+                btn.classList.remove('loading');
+            }
+        }
+
+        function displayResults(results) {
+            const section = document.getElementById('resultsSection');
+            const list = document.getElementById('resultsList');
+
+            if (!results || results.length === 0) {
+                list.innerHTML = '<div class="empty-state">未识别到明确的地标或建筑</div>';
+                section.style.display = 'block';
+                return;
+            }
+
+            list.innerHTML = results.map((item, i) => {
+                const confidenceClass = item.confidence === '高' ? 'confidence-high' :
+                    item.confidence === '中' ? 'confidence-mid' : 'confidence-low';
+                return `
+                    <div class="result-card" style="animation-delay: ${i * 0.1}s">
+                        <div class="name">${escapeHtml(item.name)}</div>
+                        <div class="meta">
+                            <span class="tag">${escapeHtml(item.type)}</span>
+                            <span class="tag ${confidenceClass}">置信度: ${escapeHtml(item.confidence)}</span>
+                        </div>
+                        <div class="desc">${escapeHtml(item.description)}</div>
+                    </div>
+                `;
+            }).join('');
+
+            section.style.display = 'block';
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text || '';
+            return div.innerHTML;
+        }
+
+        // 初始化
+        initLocation();
+    </script>
+</body>
+</html>

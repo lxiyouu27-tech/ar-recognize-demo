@@ -1,0 +1,8 @@
+{
+  "buildCommand": "",
+  "outputDirectory": "public",
+  "rewrites": [
+    { "source": "/api/pois", "destination": "/api/pois" },
+    { "source": "/api/recognize-frame", "destination": "/api/recognize_frame" }
+  ]
+}

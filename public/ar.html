@@ -344,14 +344,16 @@
             try {
                 const perm = await DeviceOrientationEvent.requestPermission();
                 if (perm !== 'granted') {
-                    status.textContent = '陀螺仪权限被拒绝';
-                    return;
+                    status.textContent = '陀螺仪权限被拒绝，将使用模拟朝向';
+                    await new Promise(r => setTimeout(r, 1500));
                 }
             } catch (e) {
-                // 非iOS或不需要权限
+                status.textContent = '传感器请求异常: ' + e.message;
+                await new Promise(r => setTimeout(r, 1500));
             }
         }
         window.addEventListener('deviceorientation', onDeviceOrientation, true);
+        window.addEventListener('deviceorientationabsolute', onDeviceOrientation, true);
 
         // 持续GPS更新
         navigator.geolocation.watchPosition(
@@ -384,7 +386,11 @@
     // ========== 传感器 ==========
     function onDeviceOrientation(event) {
         if (event.webkitCompassHeading !== undefined) {
+            // iOS Safari
             heading = event.webkitCompassHeading;
+        } else if (event.absolute && event.alpha !== null) {
+            // Android absolute orientation
+            heading = (360 - event.alpha) % 360;
         } else if (event.alpha !== null) {
             heading = (360 - event.alpha) % 360;
         }
